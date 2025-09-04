@@ -60,11 +60,16 @@ vim.opt.wildignorecase = true
 vim.opt.undodir = vim.fs.joinpath(vim.fn.stdpath("state") --[[@as string]], "undodir")
 vim.opt.undofile = true
 
---- Diagnotics
+-- Spelling
+vim.opt.spelllang = 'en_us'
+vim.opt.spell = true
+
+--- Diagnostics
 vim.diagnostic.config({
   underline = false,
   severity_sort = true,
 })
+
 
 --- Keymaps
 
@@ -89,13 +94,13 @@ local map = function(modes, keys, action, desc, opts)
   vim.keymap.set(modes, keys, action, opts)
 end
 --- Usually you don't want to yank single characters.
---- For the rare situations where you do need to, you can `vd`.
+--- For the rare situations where you do need to, you can `VD`.
 map("n", "x", "\"_x", "Deletes a single character without yanking it.")
 vim.api.nvim_set_option("clipboard", "unnamed")
 --- Move up/down while respecting soft line wraps.
 map("n", "j", "v:count == 0 ? 'gj' : 'j'", "`j` but it respects soft line wraps.", { expr = true })
 map("n", "k", "v:count == 0 ? 'gk' : 'k'", "`k` but it respects soft line wraps.", { expr = true })
-
+map("i", "<C-p>", "<c-g>u<Esc>[s1z=`]a<c-g>u")
 --- Yanking and pasting using the system clipboard.
 ---
 --- If you're using WSL make sure your Windows clipboard is actually accessible from within WSL.
@@ -199,16 +204,23 @@ end
 
 Balls:register("https://github.com/lervag/vimtex", {
   name = "vimtex",
-  init = function()
-    vim.g.vimtex_view_method = "zathura"
-    vim.g.tex_conceal = "abdmg"
-    vim.o.conceallevel = 2
-    vim.cmd [[set conceallevel=2]]
-  end
+  -- init = function()
+  --     print('here')
+  --     vim.g.vimtex_view_method = "zathura"
+  --     vim.g.tex_conceal = "abdmg"
+  --     vim.o.conceallevel = 2
+  --     vim.cmd [[set conceallevel=2]]
+  -- end
 })
-local ok, vimtex = pcall(require, "vimtex")
 
-vim.cmd [[set conceallevel=2]]
+-- vim.api.nvim_create_autocmd({ "BufWritePost" }, {
+--   pattern = '*.tex',
+--   callback = function()
+--     local file_name = vim.api.nvim_buf_get_name(0)
+--     vim.cmd(":silent! !latexindent -w " .. file_name .. " -s")
+--   end
+-- })
+-- -- vim.cmd [[set conceallevel=2]]
 
 Balls:register("https://github.com/rebelot/kanagawa.nvim", {
   name = "kanagawa",
@@ -396,6 +408,7 @@ if treesitter_installed then
 
     indent = {
       enable = true,
+      disable = { "latex", "tex" }
     },
   })
 end
@@ -516,7 +529,7 @@ if lspconfig_installed then
   --   <https://github.com/neovim/nvim-lspconfig/blob/master/doc/server_configurations.md>
   --
   -- As well as links to documentation.
-  local servers = { "rust_analyzer", "pyright", "lua_ls", "ts_ls", "digestif" }
+  local servers = { "rust_analyzer", "pyright", "lua_ls", "ts_ls" }
   local capabilities = vim.lsp.protocol.make_client_capabilities()
   local cmp_installed, cmp = pcall(require, "cmp_nvim_lsp")
 
@@ -706,14 +719,143 @@ if lualine_installed then
   -- See `:help lualine` for more information.
   lualine.setup({
     options = {
-      theme = "catppuccin",
+      theme = "kanagawa",
     },
   })
 end
 
+--- Formatting
+
+
+Balls:register("https://github.com/stevearc/conform.nvim")
+local conform_installed, conform = pcall(require, "conform")
+if conform_installed then
+  conform.setup({
+    -- Map of filetype to formatters
+    formatters_by_ft = {
+      lua = { "stylua" },
+      -- Conform will run multiple formatters sequentially
+      go = { "goimports", "gofmt" },
+      -- You can also customize some of the format options for the filetype
+      rust = { "rustfmt", lsp_format = "fallback" },
+
+      tex = { "latexindent" },
+      -- You can use a function here to determine the formatters dynamically
+      python = function(bufnr)
+        if require("conform").get_formatter_info("ruff_format", bufnr).available then
+          return { "ruff_format" }
+        else
+          return { "isort", "black" }
+        end
+      end,
+      -- Use the "*" filetype to run formatters on all filetypes.
+      ["*"] = { "codespell" },
+      -- Use the "_" filetype to run formatters on filetypes that don't
+      -- have other formatters configured.
+      ["_"] = { "trim_whitespace" },
+    },
+    -- Set this to change the default values when calling conform.format()
+    -- This will also affect the default values for format_on_save/format_after_save
+    default_format_opts = {
+      lsp_format = "fallback",
+    },
+    -- If this is set, Conform will run the formatter on save.
+    -- It will pass the table to conform.format().
+    -- This can also be a function that returns the table.
+    format_on_save = {
+      -- I recommend these options. See :help conform.format for details.
+      lsp_format = "fallback",
+      timeout_ms = 500,
+    },
+    -- If this is set, Conform will run the formatter asynchronously after save.
+    -- It will pass the table to conform.format().
+    -- This can also be a function that returns the table.
+    format_after_save = {
+      lsp_format = "fallback",
+    },
+    -- Set the log level. Use `:ConformInfo` to see the location of the log file.
+    log_level = vim.log.levels.ERROR,
+    -- Conform will notify you when a formatter errors
+    notify_on_error = true,
+    -- Conform will notify you when no formatters are available for the buffer
+    notify_no_formatters = true,
+    -- Custom formatters and overrides for built-in formatters
+    -- formatters = {
+    -- my_formatter = {
+    --   -- This can be a string or a function that returns a string.
+    --   -- When defining a new formatter, this is the only field that is required
+    --   -- command = "my_cmd",
+    --   -- A list of strings, or a function that returns a list of strings
+    --   -- Return a single string instead of a list to run the command in a shell
+    --   -- args = { "--stdin-from-filename", "$FILENAME" },
+    --   -- If the formatter supports range formatting, create the range arguments here
+    --   -- range_args = function(self, ctx)
+    --   --   return { "--line-start", ctx.range.start[1], "--line-end", ctx.range["end"][1] }
+    --   -- end,
+    --   -- Send file contents to stdin, read new contents from stdout (default true)
+    --   -- When false, will create a temp file (will appear in "$FILENAME" args). The temp
+    --   -- file is assumed to be modified in-place by the format command.
+    --   stdin = true,
+    --   -- A function that calculates the directory to run the command in
+    --   cwd = require("conform.util").root_file({ ".editorconfig", "package.json" }),
+    --   -- When cwd is not found, don't run the formatter (default false)
+    --   require_cwd = true,
+    --   -- When stdin=false, use this template to generate the temporary file that gets formatted
+    --   tmpfile_format = ".conform.$RANDOM.$FILENAME",
+    --   -- When returns false, the formatter will not be used
+    --   condition = function(self, ctx)
+    --     return vim.fs.basename(ctx.filename) ~= "README.md"
+    --   end,
+    --   -- Exit codes that indicate success (default { 0 })
+    --   exit_codes = { 0, 1 },
+    --   -- Environment variables. This can also be a function that returns a table.
+    --   env = {
+    --     VAR = "value",
+    --   },
+    --   -- Set to false to disable merging the config with the base definition
+    --   inherit = true,
+    --   -- When inherit = true, add these additional arguments to the beginning of the command.
+    --   -- This can also be a function, like args
+    --   prepend_args = { "--use-tabs" },
+    --   -- When inherit = true, add these additional arguments to the end of the command.
+    --   -- This can also be a function, like args
+    --   append_args = { "--trailing-comma" },
+    -- },
+    -- These can also be a function that returns the formatter
+    -- },
+  })
+end
+
+
+--Linting
+Balls:register("https://www.github.com/mfussenegger/nvim-lint")
+
+local lint_installed, lint = pcall(require, "nvim-lint")
+
+if lint_installed then
+  vim.api.nvim_create_autocmd({ "BufWritePost" }, {
+    callback = function()
+      -- try_lint without arguments runs the linters defined in `linters_by_ft`
+      -- for the current filetype
+      lint.try_lint()
+
+      -- You can call `try_lint` with a linter name or a list of names to always
+      -- run specific linters, independent of the `linters_by_ft` configuration
+      -- require("lint").try_lint("cspell")
+    end,
+  })
+  lint.linters_by_ft = {
+    python = { 'mypy' },
+    lua = { 'luac' },
+  }
+end
 
 
 --- Undotree
 
 Balls:register("https://github.com/mbbill/undotree")
 map("n", "<leader>u", vim.cmd.UndotreeToggle)
+
+
+--- Git Support
+Balls:register("https://github.com/tpope/vim-fugitive")
